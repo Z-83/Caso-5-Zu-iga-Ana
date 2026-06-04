@@ -1,4 +1,4 @@
-import {
+﻿import {
   WebSocketGateway,
   WebSocketServer,
   OnGatewayConnection,
@@ -12,10 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { ConnectedUsersService } from './connected-users.service';
 
 @WebSocketGateway({
-  cors: {
-    origin: '*', 
-    credentials: true,
-  },
+  cors: { origin: '*', credentials: true },
   namespace: '/notifications',
 })
 export class NotificationsGateway
@@ -35,58 +32,47 @@ export class NotificationsGateway
   ) {}
 
   onModuleInit() {
-    this.cleanupInterval = setInterval(() => {
-      this.checkExpiredTokens();
-    }, 60000); // 60 seconds
-    this.logger.log('⏰ Servidor WebSocket inicializado con chequeo de expiración JWT (cada 60 segundos)');
+    this.cleanupInterval = setInterval(() => this.checkExpiredTokens(), 60000);
   }
 
   onModuleDestroy() {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-    }
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
   }
 
   private checkExpiredTokens() {
-    try {
-      this.logger.debug('⏰ Ejecutando chequeo proactivo de tokens JWT expirados...');
-      const sockets = this.server.of('/notifications').sockets;
-      const now = Math.floor(Date.now() / 1000);
-      let disconnectCount = 0;
-
-      sockets.forEach((socket) => {
-        const user = socket.data.user;
-        if (user && user.exp) {
-          if (now >= user.exp) {
-            this.logger.warn(
-              `🔒 Sesión expirada para el usuario ${user.email || 'desconocido'} (ID: ${user.sub || socket.data.userId}). Desconectando socket proactivamente: ${socket.id}`,
-            );
-            socket.emit('session_expired', { message: 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.' });
-            socket.disconnect(true);
-            disconnectCount++;
-          }
-        }
-      });
-
-      if (disconnectCount > 0) {
-        this.logger.log(`⏰ Se desconectaron proactivamente ${disconnectCount} sockets con tokens JWT expirados.`);
+    const sockets = this.server.of('/notifications').sockets;
+    const now = Math.floor(Date.now() / 1000);
+    sockets.forEach((socket: Socket) => {
+      const user = socket.data.user;
+      if (user && user.exp && now >= user.exp) {
+        socket.emit('session_expired', { message: 'Sesion expirada.' });
+        socket.disconnect(true);
       }
+    });
+  }
+
+  async handleConnection(client: Socket) {
+    try {
+      const token = this.extractTokenFromSocket(client);
+      if (!token) {
+        client.disconnect(true);
+        return;
+      }
+      const secret = this.configService.get<string>('JWT_SECRET');
+      const payload = this.jwtService.verify(token, { secret });
+      const userId = payload.sub;
+      const email = payload.email;
+      client.data.userId = userId;
+      client.data.email = email;
+      client.data.user = payload;
 
       if (!userId) {
-        this.logger.warn(`Conexión sin userId tras verificación. Socket: ${client.id}`);
         client.disconnect(true);
         return;
       }
 
-      this.connectedUsersService.registerConnection(
-        userId,
-        client.id,
-        email || 'unknown',
-      );
-
-      this.logger.log(
-        `Conexión exitosa - Usuario: ${email} (ID: ${userId}), Socket: ${client.id}`,
-      );
+      this.connectedUsersService.registerConnection(userId, client.id, email || 'unknown');
+      this.logger.log('Conexion exitosa - Usuario: ' + email + ' (ID: ' + userId + '), Socket: ' + client.id);
     } catch (error) {
       this.logger.error('Error en handleConnection', error);
       client.emit('connection_error', { message: 'Auth error' });
@@ -95,19 +81,10 @@ export class NotificationsGateway
   }
 
   private extractTokenFromSocket(client: Socket): string | undefined {
-    const authHeader = client.handshake.headers?.authorization as
-      | string
-      | undefined;
-
-    if (!authHeader) {
-      return undefined;
-    }
-
+    const authHeader = client.handshake.headers?.authorization as string | undefined;
+    if (!authHeader) return undefined;
     const parts = authHeader.split(' ');
-    if (parts.length === 2 && parts[0] === 'Bearer') {
-      return parts[1];
-    }
-
+    if (parts.length === 2 && parts[0] === 'Bearer') return parts[1];
     return undefined;
   }
 
@@ -115,170 +92,56 @@ export class NotificationsGateway
     try {
       const userId = client.data.userId;
       const email = client.data.email;
-
-      const wasConnected =
-        this.connectedUsersService.disconnectBySocket(client.id);
-
+      const wasConnected = this.connectedUsersService.disconnectBySocket(client.id);
       if (wasConnected) {
         client.broadcast.emit('user_disconnected', {
-          userId,
-          email,
-          disconnectedAt: new Date(),
+          userId, email, disconnectedAt: new Date(),
           totalConnected: this.connectedUsersService.getTotalConnected(),
         });
-
-        this.logger.log(
-          ` Desconexión - Usuario: ${email} (ID: ${userId}), Socket: ${client.id}`,
-        );
-      } else {
-        this.logger.warn(
-          ` Intento de desconectar usuario no registrado. Socket: ${client.id}`,
-        );
       }
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Error desconocido';
-      this.logger.error(
-        ` Error en handleDisconnect: ${errorMessage}`,
-        error,
-      );
+      this.logger.error('Error en handleDisconnect', error);
     }
   }
 
   @SubscribeMessage('ping')
   handlePing(client: Socket): { event: string; data: string } {
-    const userId = client.data.userId;
-    this.logger.debug(`Ping recibido de usuario ${userId}`);
-    return { event: 'pong', data: `pong-${new Date().getTime()}` };
+    return { event: 'pong', data: 'pong-' + new Date().getTime() };
   }
 
   @SubscribeMessage('get_connection_status')
   handleGetConnectionStatus(client: Socket) {
     const userId = client.data.userId;
-    const connectionInfo =
-      this.connectedUsersService.getConnectionInfo(userId);
-
+    const connectionInfo = this.connectedUsersService.getConnectionInfo(userId);
     return {
       event: 'connection_status',
-      data: {
-        userId,
-        socketId: client.id,
-        isConnected: true,
-        connectedAt: connectionInfo?.connectedAt || new Date(),
-      },
+      data: { userId, socketId: client.id, isConnected: true, connectedAt: connectionInfo?.connectedAt || new Date() },
     };
   }
-  
-  notifyTransferSent(
-    fromUserId: number,
-    transactionData: {
-      transactionId: number;
-      amount: number;
-      toEmail: string;
-      newBalance: number;
-      timestamp: Date;
-    },
-  ) {
+
+  notifyTransferSent(fromUserId: number, transactionData: { transactionId: number; amount: number; toEmail: string; newBalance: number; timestamp: Date }) {
     const socketIds = this.connectedUsersService.getSocketIds(fromUserId);
-
-    if (socketIds.length > 0) {
-      for (const socketId of socketIds) {
-        this.server.to(socketId).emit('transfer_sent', {
-          message: 'Transferencia enviada exitosamente',
-          transactionId: transactionData.transactionId,
-          amount: transactionData.amount,
-          toEmail: transactionData.toEmail,
-          newBalance: transactionData.newBalance,
-          timestamp: transactionData.timestamp,
-        });
-
-        this.logger.log(
-          `📤 Notificación enviada al usuario ${fromUserId} a través de socket ${socketId}: transferencia ID ${transactionData.transactionId}`,
-        );
-      }
-    } else {
-      this.logger.warn(
-        ` Usuario ${fromUserId} no está conectado para recibir notificación de transferencia`,
-      );
+    for (const socketId of socketIds) {
+      this.server.to(socketId).emit('transfer_sent', { message: 'Transferencia enviada', ...transactionData });
     }
   }
 
-  notifyTransferReceived(
-    toUserId: number,
-    transactionData: {
-      transactionId: number;
-      amount: number;
-      fromEmail: string;
-      newBalance: number;
-      timestamp: Date;
-    },
-  ) {
+  notifyTransferReceived(toUserId: number, transactionData: { transactionId: number; amount: number; fromEmail: string; newBalance: number; timestamp: Date }) {
     const socketIds = this.connectedUsersService.getSocketIds(toUserId);
-
-    if (socketIds.length > 0) {
-      for (const socketId of socketIds) {
-        this.server.to(socketId).emit('transfer_received', {
-          message: '¡Has recibido una transferencia!',
-          transactionId: transactionData.transactionId,
-          amount: transactionData.amount,
-          fromEmail: transactionData.fromEmail,
-          newBalance: transactionData.newBalance,
-          timestamp: transactionData.timestamp,
-        });
-
-        this.logger.log(
-          `Notificación enviada al usuario ${toUserId} a través de socket ${socketId}: transferencia recibida ID ${transactionData.transactionId}`,
-        );
-      }
-    } else {
-      this.logger.warn(
-        ` Usuario ${toUserId} no está conectado para recibir notificación de transferencia`,
-      );
+    for (const socketId of socketIds) {
+      this.server.to(socketId).emit('transfer_received', { message: 'Has recibido una transferencia', ...transactionData });
     }
   }
 
-  notifyTransfer(payload: {
-    fromUserId: number;
-    toUserId: number;
-    amount: number;
-    transactionId: number;
-    newBalanceFrom: number;
-    newBalanceTo: number;
-    timestamp: Date;
-  }) {
-    this.notifyTransferSent(payload.fromUserId, {
-      transactionId: payload.transactionId,
-      amount: payload.amount,
-      toEmail: 'usuario',
-      newBalance: payload.newBalanceFrom,
-      timestamp: payload.timestamp,
-    });
-
-    this.notifyTransferReceived(payload.toUserId, {
-      transactionId: payload.transactionId,
-      amount: payload.amount,
-      fromEmail: 'usuario',
-      newBalance: payload.newBalanceTo,
-      timestamp: payload.timestamp,
-    });
+  notifyTransfer(payload: { fromUserId: number; toUserId: number; amount: number; transactionId: number; newBalanceFrom: number; newBalanceTo: number; timestamp: Date }) {
+    this.notifyTransferSent(payload.fromUserId, { transactionId: payload.transactionId, amount: payload.amount, toEmail: 'usuario', newBalance: payload.newBalanceFrom, timestamp: payload.timestamp });
+    this.notifyTransferReceived(payload.toUserId, { transactionId: payload.transactionId, amount: payload.amount, fromEmail: 'usuario', newBalance: payload.newBalanceTo, timestamp: payload.timestamp });
   }
 
-  sendNotificationToUser(
-    userId: number,
-    eventName: string,
-    data: any,
-  ) {
+  sendNotificationToUser(userId: number, eventName: string, data: any) {
     const socketIds = this.connectedUsersService.getSocketIds(userId);
-
-    this.logger.debug(`SEND WS EVENT to ${socketIds.length} sockets: ` + JSON.stringify({ userId, socketIds, eventName }));
-
-    if (socketIds.length > 0) {
-      for (const socketId of socketIds) {
-        this.server.to(socketId).emit(eventName, data);
-        this.logger.log(`EVENT SENT TO SOCKET: ${socketId} for user ${userId}`);
-      }
-    } else {
-      this.logger.warn(`USER NOT CONNECTED: ${userId}`);
+    for (const socketId of socketIds) {
+      this.server.to(socketId).emit(eventName, data);
     }
   }
 
@@ -286,4 +149,3 @@ export class NotificationsGateway
     return this.connectedUsersService.isConnected(userId);
   }
 }
-

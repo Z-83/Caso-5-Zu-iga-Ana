@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -11,6 +11,7 @@ import { AccountModule } from './modules/account/account.module';
 import { TransactionModule } from './modules/transaction/transaction.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { MailModule } from './mail/mail.module';
+import { EstudianteModule } from './modules/estudiante/estudiante.module';
 
 @Module({
   imports: [
@@ -27,7 +28,7 @@ import { MailModule } from './mail/mail.module';
     AccountModule,
     TransactionModule,
     NotificationsModule,
-    MailModule,
+    MailModule,`n    EstudianteModule,
   ],
   controllers: [AppController],
   providers: [AppService],

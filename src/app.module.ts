@@ -12,14 +12,12 @@ import { TransactionModule } from './modules/transaction/transaction.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { MailModule } from './mail/mail.module';
 import { EstudianteModule } from './modules/estudiante/estudiante.module';
-
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
     }),
-
     DatabaseModule,
     EventEmitterModule.forRoot(),
     AuthModule,
@@ -28,7 +26,8 @@ import { EstudianteModule } from './modules/estudiante/estudiante.module';
     AccountModule,
     TransactionModule,
     NotificationsModule,
-    MailModule,`n    EstudianteModule,
+    MailModule,
+    EstudianteModule,
   ],
   controllers: [AppController],
   providers: [AppService],

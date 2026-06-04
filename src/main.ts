@@ -17,7 +17,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   const config = new DocumentBuilder()
-    .setTitle('PayFlow - Digital Wallet')
+    .setTitle('Zuñiga Ana - Digital Wallet')
     .setDescription('API desarrollada por Zuñiga Ana')
     .setVersion('1.0')
     .addBearerAuth()

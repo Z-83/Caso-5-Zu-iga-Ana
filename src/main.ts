@@ -1,4 +1,4 @@
-import { NestFactory } from '@nestjs/core';
+﻿import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -18,7 +18,7 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('PayFlow - Digital Wallet')
-    .setDescription('The PayFlow API documentation')
+    .setDescription('API desarrollada por Zuñiga Ana')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
@@ -28,9 +28,9 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   await app.listen(port);
 
-  console.log(`🚀 Server running on http://localhost:${port}/api`);
+  console.log(`ðŸš€ Server running on http://localhost:${port}/api`);
   console.log(
-    `📖 Documentation available on http://localhost:${port}/api/docs`,
+    `ðŸ“– Documentation available on http://localhost:${port}/api/docs`,
   );
 }
 
